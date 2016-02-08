@@ -1,0 +1,66 @@
+---
+title: "607 Homework 1"
+author: "Armenoush Aslanian-Persico"
+date: "February 7, 2016"
+output: html_document
+---
+
+##Load libraries.
+
+```{r load-data, eval=TRUE}
+library(devtools)
+library(RCurl)
+library(plyr)
+```
+
+##Import file as CSV, check variables.
+Data has no header row so we must indicate "header=F".
+```{r}
+x <- getURL("https://archive.ics.uci.edu/ml/machine-learning-databases/bridges/bridges.data.version1")
+y<-data.frame(read.csv(text=x, header=F))
+dim(y)
+head(y)
+```
+
+##Rename column headers.
+```{r}
+head(rename(y,c("V1"="ID","V2"="River","V3"="Location","V4"="Erected","V5"="Purpose","V6"="Length", "V7"="Lanes", "V8"="Clear-G","V9"="T or D","V10"="Material","V11"="Span","V12"="Rel-L","V13"="Type")))
+```
+
+##Select a subset by row.
+###How many wood bridges are over 100 years old?
+```{r}
+OldWoodenBridges<- subset(y, V4 <1915 & V10=="WOOD")
+OldWoodenBridges
+summary(OldWoodenBridges)
+```
+This returns 16 bridges.  
+
+###How many steel bridges are over 100 years old?
+```{r}
+OldSteelBridges<- subset(y, V4 <1915 & V10=="STEEL")
+OldSteelBridges
+summary(OldSteelBridges)
+```
+This returns 38 bridges.  
+
+##Select a subset by column and row.
+###Show select information for new bridges.
+```{r}
+NewBridges<-subset(y,V4>1960,select=c(V1,V4,V9,V10,V11,V13))
+NewBridges
+summary(NewBridges)
+```
+
+##Bar plots
+###What are the most common bridge materials in Pittsburgh?
+```{r}
+barplot(table(y$V10), ylim=c(0,108),main="Pittsburgh Bridges by Material")
+```
+This makes sense considering Pittsburgh's steel history.  
+
+###How many bridges were built by year?
+```{r}
+barplot(table(y$V4), ylim=c(0,10),main="Pittsburgh Bridges by Year")
+```
+
