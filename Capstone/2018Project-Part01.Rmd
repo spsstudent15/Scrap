@@ -1,0 +1,233 @@
+---
+title: "Part 1: Merge datasets; export complete cases only."
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+
+```{r 0-libraries, warning=FALSE, message=FALSE}
+library(proto)
+library(gsubfn)
+library(RSQLite)
+library(knitr)
+library(data.table)
+library(plyr)
+library(dplyr)
+library(sqldf)
+
+
+#abbreviations
+#dfp is the civil list/payroll dataset
+#dft is the titles dataset
+```
+
+
+# Unique Titles
+
+``````{r 1-uniquetitles}
+#this imports a list of unique titles previously created from the titles dataset
+
+dft <- data.frame(read.csv("20180305titles.csv"),stringsAsFactors = FALSE)
+
+dft %>%
+    arrange((UniqueTitle))%>%
+  head(5)%>%
+  kable
+str(dft) #4424 obs. of 10 variables
+```
+
+# How many titles in the Unique Titles dataset?
+> 4424 unique titles
+
+# Employee List (Civil List)
+
+``````{r 2-civillist}
+#import the payroll dataset
+
+dfp <- data.frame(read.csv("20180305payroll.csv"), stringsAsFactors = FALSE)
+str(dfp)
+
+dfp%>%
+  head(5)%>%
+  kable
+
+#count of employees by year in the payroll dataset
+byyear <- group_by(dfp,CALENDAR.YEAR)
+( sumyear <- summarize(byyear,count=n()) )
+
+#commented out
+#count of employees by agency in the payroll dataset
+#byagency <- group_by(dfp,ADDRESS)
+#( sumyear <- summarize(byagency,count=n()) )
+
+
+#count of employees by agency in the payroll dataset
+#different method
+#sort by total number of employees in years 2014+2015
+dfp %>%
+     group_by(ADDRESS) %>%
+     summarise(total.count=n()) %>%
+     arrange(desc(total.count))
+
+#str(dfp) #570941 obs. of 7 variables
+```
+
+# Join Two Tables
+
+``````{r 3-join}
+
+#rename columns in both datasets
+setnames(dft, "UniqueTitle", "TITLE")
+setnames(dfp, "TTL..", "TITLE")
+setnames(dfp, "SAL.RATE", "SAL")
+setnames(dfp, "CALENDAR.YEAR", "YEAR")
+
+#left outer join to match by title
+dfm1<-merge(x = dfp, y = dft, by = "TITLE", all.x = TRUE)
+#dfm1<-data.frame(dfm1, stringsAsFactors = FALSE)
+
+
+dfm1 %>% mutate_if(is.factor, as.character) -> dfm1
+str(dfm1)
+
+#show most frequent descriptions in descending order; 153485 rows did not have a matching title code
+dfm1 %>%
+     group_by(Description) %>%
+     summarise(total.count=n()) %>%
+     arrange(desc(total.count))
+
+```
+
+# What rows are we excluding?
+## Incomplete cases: Employees listed on the payroll dataset but whose job is not listed on the titles dataset
+
+``````{r 4-employees-with-no-title-match}
+dfna <- dfm1[is.na(dfm1$Description),] #should be 153485
+#dfna<-data.frame(dfna, stringsAsFactors = FALSE)
+str(dfna)
+#first attempt, with factors
+#153485 rows of 570491 are unmatched
+#13598 mayoral
+#second attempt, stringsasfactors-false
+
+# what agencies are we excluding? Note the counts here are the count of employee payroll years. An employee on payroll in 2014 and 2015 would be summarized here as 2 separate observations.
+
+dfna %>%
+     group_by(ADDRESS) %>%
+     summarise(total.count=n()) %>%
+     arrange(desc(total.count))%>%
+  head(70)%>%
+  kable
+
+# how many records per year are we excluding?
+dfna %>%
+     group_by(YEAR) %>%
+     summarise(total.count=n()) %>%
+  head(5)%>%
+  kable
+
+#write.csv(dfna, file = "dfna.csv")
+```
+
+# View joined table; complete cases only
+
+```{r 5-join}
+
+#show complete cases only-- do not include NA rows
+dfc<-dfm1[complete.cases(dfm1), ]
+
+#convert salary to numeric, remove currency symbol
+dfc$SAL <- as.numeric(gsub('[$,]', '', dfc$SAL))
+
+#show head by descending salary
+dfc %>%
+    arrange(desc(SAL))%>%
+  head(5)%>%
+  kable
+
+# check count of rows in dfc. should be total num minus na. Should be 570491-153485 = 417006
+str(dfc)
+```
+
+# Export complete cases
+```{r 5a}
+write.csv(dfc, file = "dfc.csv")
+```
+
+
+---
+# The following sections will be in Part 2 and are listed here for reference purposes only:
+
+# Show unique values in Pay Type Column
+
+```{r 6, eval=FALSE}
+#bypaytype <- group_by(dfc,PayType)
+#( sumpaytype <- summarize(bypaytype,count=n()) )
+
+bypaytype<- dfc %>% count(PayType, YEAR) %>% ungroup() %>% arrange(desc(n))
+
+kable(head(bypaytype,20))
+```
+
+# Show unique values in SalaryMinMaxValid Column
+
+```{r 7, eval=FALSE}
+#byvalidsal <- group_by(dfc,SalaryMinMaxValid)
+#( sumvalidsal <- summarize(byvalidsal,count=n()) )
+
+byvalidsal<- dfc %>% count(SalaryMinMaxValid, YEAR) %>% ungroup() %>% arrange(desc(n))
+
+kable(head(byvalidsal,20))
+
+```
+
+# Show unique values in TitleStatus Column
+
+```{r 8, eval=FALSE}
+#bytitlestatus <- group_by(dfc,TitleStatus)
+#( sumtitlestatus <- summarize(bytitlestatus,count=n()) )
+
+bytitlestatus<- dfc %>% count(TitleStatus, YEAR) %>% ungroup() %>% arrange(desc(n))
+
+kable(head(bytitlestatus,20))
+
+```
+
+# Show unique values in UnionName Column
+
+```{r 9, eval=FALSE}
+#byunion <- group_by(dfc,UnionName)
+#( sumunion <- summarize(byunion,count=n()) )
+
+byunion<- dfc %>% count(UnionName, YEAR) %>% ungroup() %>% arrange(desc(n))
+
+kable(head(byunion,20))
+
+```
+
+
+# Show duplicated names
+
+```{r 11, eval=FALSE}
+#kable(duplicated(dfc$NAME))
+```
+# Investigate the EitherAnnualHourly rows to determine salary category.
+
+# Narrow the dataset active titles only, valid salary only, annual salary only.
+
+# Issues with data integrity
+
+> Describe creation of indicator columns: CountSubTitles, Min.MinRate, Max.MaxRate, SalaryMinMaxVlaid, MultipleSubtitles, PayType, PayPeriod
+
+> Typo in at least one record, showing $350,000 salary minimum which should be $35,000
+
+
+> Salary rate is not always within the min/max allowable of the title. This may be because the salary may include overtime, or the title list may have outdated salary amounts.
+
+> 153485 rows of 570491 are unmatched, meaning there are 153485 employee records where the title code does not correspond to a published title in the civil list. These rows will have to be removed from the dataset because no title analysis will be possible.

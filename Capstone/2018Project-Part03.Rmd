@@ -1,0 +1,292 @@
+---
+title: 'Part 3: Visualizations'
+output:
+  html_document:
+    code_folding: hide
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Libraries
+
+```{r 0-libraries, warning=FALSE, message=FALSE}
+library(proto)
+library(gsubfn)
+library(RSQLite)
+library(knitr)
+library(data.table)
+library(plyr)
+library(dplyr)
+library(sqldf)
+library(ggplot2)
+library(RColorBrewer)
+library(grid)
+library(ggrepel)
+library(plotly)
+library(kableExtra)
+```
+
+
+# Donut chart:  Top 10 agencies with the most jobs under $10K, 2015
+
+```{r 1}
+df1<- data.frame(read.csv("agency15low.csv"),stringsAsFactors = FALSE)
+
+df1 %>% mutate_if(is.factor, as.character) -> df1
+
+p1 <- df1 %>%
+  plot_ly(labels = ~ADDRESS, values = ~n) %>%
+  add_pie(hole = 0.6) %>%
+  layout(title = "Agencies with the most jobs under $10K",  showlegend = T,
+         xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+
+p1
+
+```
+
+
+# Donut chart:  Top 10 titles with the most jobs under $10K, 2015
+
+```{r 2}
+df2<- data.frame(read.csv("agency15low-titles.csv"),stringsAsFactors = FALSE)
+
+df2 %>% mutate_if(is.factor, as.character) -> df2
+
+p2 <- df2 %>%
+  plot_ly(labels = ~Description, values = ~n) %>%
+  add_pie(hole = 0.6) %>%
+  layout(title = "Titles with the most jobs under $10K",  showlegend = T,
+         xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+
+p2
+
+```
+
+
+# Donut chart:  Top 10 agencies with the most jobs over $10K, 2015
+
+```{r 3}
+df3<- data.frame(read.csv("agency15high.csv"),stringsAsFactors = FALSE)
+
+df3 %>% mutate_if(is.factor, as.character) -> df3
+
+p3 <- df3 %>%
+  plot_ly(labels = ~ADDRESS, values = ~n) %>%
+  add_pie(hole = 0.6) %>%
+  layout(title = "Agencies with the most jobs over $10K",  showlegend = T,
+         xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+
+p3
+
+```
+
+
+# Donut chart: Top 10 titles with the most jobs over $10K, 2015
+
+```{r 4}
+df4<- data.frame(read.csv("agency15high-titles.csv"),stringsAsFactors = FALSE)
+
+df4 %>% mutate_if(is.factor, as.character) -> df4
+
+p4 <- df4 %>%
+  plot_ly(labels = ~Description, values = ~n) %>%
+  add_pie(hole = 0.6) %>%
+  layout(title = "Titles with the most jobs over $10K",  showlegend = T,
+         xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+
+p4
+
+```
+
+# Histogram: Distribution of 10K+ salaries
+
+```{r 5}
+df15<- data.frame(read.csv("df15.csv"),stringsAsFactors = FALSE)
+
+hist(df15$SAL, 
+     main ="Distribution of salaries over $10K, 2015",
+     xlab="Salary",
+     border="black",
+     col="#58D68D",
+     xlim=c(0,200000),
+     ylim=c(0,50000),
+     breaks = seq(0, 350000, by = 10000)
+     #prob=TRUE
+     #breaks=c(0,10000,20000,30000,40000,50000,60000,70000,80000,90000,100000,110000,120000,130000,350000)
+     )
+
+#lines(density(df15$SAL))
+
+
+```
+
+# Scatterplot: Count of jobs in title vs. Average salary per title
+
+```{r 6}
+sal15a<-df15 %>%
+  group_by(Description) %>%
+  mutate(Count = n()) %>%
+  group_by(TITLE, Description, Count) %>%
+  summarise_at(vars(SAL), funs(round(mean(., na.rm=TRUE),0)  ))%>%
+  arrange(desc(Count))
+
+df5<-head(sal15a,100)
+
+p5 <- plot_ly(
+  data = df5, 
+  x = ~Count, 
+  y = ~SAL, 
+  type = 'scatter', 
+  mode = 'markers',
+  hoverinfo='text',
+  text = ~paste(
+    'Title: ', Description,
+    '<br> Employees: ', Count,
+    '<br> Avg Salary: ', SAL)) %>%
+  layout(title="100 most popular titles with average salary by title")
+p5
+
+
+p5 <- plot_ly(
+  data = df5, 
+  x = ~Count, 
+  y = ~SAL, 
+  type = 'scatter', 
+  mode = 'markers',
+  hoverinfo='text',
+  text = ~paste(
+    'Title: ', Description,
+    '<br> Employees: ', Count,
+    '<br> Avg Salary: ', SAL)) %>%
+  layout(
+    xaxis = list(range = c(0, 5000)),
+    yaxis = list(range = c(0, 170000)),
+    title="Popular titles with average salary by title, <5000 serving in title")
+p5
+
+```
+
+# Table: Do some agencies have a greater variety of job titles available?
+
+The following is a count of unique titles by agency.
+
+```{r 7}
+df6<-df15
+
+df6 %>%
+  group_by(ADDRESS) %>%
+  summarise(count = n_distinct(TITLE))%>% 
+  arrange(desc(count))%>%
+  top_n(20)%>%
+  kable("html") %>%
+  kable_styling() 
+```
+
+# Table: Which titles have employees across the most agencies?
+
+The high counts here are skewed due to each Community Board being represented as a different city agency.
+
+```{r 8}
+df7<-df15
+
+df7 %>%
+  group_by(Description) %>%
+  summarise(count = n_distinct(ADDRESS))%>% 
+  arrange(desc(count))%>%
+  top_n(20)%>%
+  kable("html") %>%
+  kable_styling() 
+
+
+```
+
+# Table: Which titles have employees across the most agencies, excluding agencies which are Community Boards?
+
+These could be considered the most flexible titles, for employees who may want to move around across agencies while retaining their civil service title.
+
+```{r 8a}
+
+df7a<-df7[- grep("COMMUNITY BOARD", df7$ADDRESS),]
+
+df7a %>%
+  group_by(Description) %>%
+  summarise(count = n_distinct(ADDRESS))%>% 
+  arrange(desc(count))%>%
+  top_n(20)%>%
+  kable("html") %>%
+  kable_styling() 
+```
+
+# Bar Plot: Which titles have employees across the most agencies, excluding agencies which are Community Boards?
+
+```{r 8b, eval=FALSE}
+# This keeps all 1089 descriptions from the original data frame
+df7b<-df7a %>%
+  group_by(Description) %>%
+  summarise(count = n_distinct(ADDRESS))%>% 
+  arrange(desc(count))%>%
+  top_n(10)%>%
+  as.data.frame()
+
+str(df7b)
+
+p7 <- plot_ly(
+  data = df7b, 
+  x = ~Description, 
+  y = ~count, 
+  type = 'bar', 
+  #mode = 'markers',
+  hoverinfo='text',
+  text = ~paste(
+    'Title: ', Description,
+    '<br> Employees: ', count) ) %>%
+  layout(title="Titles across the most agencies, excluding Community Boards")
+
+p7
+```
+
+```{r 8c}
+
+df7b<- data.frame(read.csv("titlesmultipleagencies.csv"),stringsAsFactors = FALSE)
+
+df7b$Description <- factor(df7b$Description, levels = unique(df7b$Description)[order(df7b$COUNT, decreasing = TRUE)])
+
+
+p7 <- plot_ly(
+  data = df7b, 
+  x = ~Description, 
+  y = ~COUNT, 
+  type = 'bar', 
+  hoverinfo='text',
+  color="#D7BDE2",
+  text = ~paste(
+    'Title: ', Description,
+    '<br> Agencies: ', COUNT) ) %>%
+  layout(title="Titles across the most agencies, excluding Community Boards", margin = list(b = 200), xaxis = list(tickangle = 90))
+
+p7
+
+```
+
+# For titles across multiple agencies, do some agencies hire the same title at a higher average salary?
+
+# What titles have the most opportunities for salary increases?
+## Min and max in each title
+
+# What are the most significant changes between 2014 and 2015?
+
+# Is there a correlation between union representation and salary?
+
+# Can this data predict current job postings in 2018? 
+
+# Is there a relationship between an agency's budget and its average salaries?

@@ -1,0 +1,459 @@
+---
+title: 'Part 2: Summaries and Findings.'
+output:
+  html_document:
+    code_folding: hide
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Libraries
+
+```{r 0-libraries, warning=FALSE, message=FALSE}
+library(proto)
+library(gsubfn)
+library(RSQLite)
+library(knitr)
+library(data.table)
+library(plyr)
+library(dplyr)
+library(sqldf)
+library(ggplot2)
+library(RColorBrewer)
+library(grid)
+
+#abbreviations
+#dfc is the complete cases dataset
+```
+
+## Complete Cases
+
+The following analysis relates to complete observations only. These observations are where the title code in the payroll list had a matching title code in the titles list. The incomplete cases were dropped from this analysis.
+<br><br>
+Incomplete cases primarily include CUNY, Triboro Bridge and Tunnel Authority, MTA, HHC, and other "non-mayoral" agencies. A small percentage of incomplete cases fall into mayoral agencies. 
+
+### Import the dataset of complete cases.
+
+```{r 1-import}
+dfc <- data.frame(read.csv("dfc.csv"),stringsAsFactors = FALSE)
+
+dfc %>% mutate_if(is.factor, as.character) -> dfc
+
+dfc %>%
+  arrange((Description))%>%
+  head(10)%>%
+  kable
+str(dfc) #expecting 417006 obs. of  20 variables
+```
+
+### What kind of Pay Types are there?
+
+```{r 2}
+bypaytype<- dfc %>% count(PayType, YEAR) %>% ungroup() %>% arrange(desc(n))
+
+kable(head(bypaytype,10))
+```
+
+### What does the Pay Type of "EitherAnnualHourly" indicate?
+
+EitherAnnualHourly indicates the min and max for the title are a broad range encompassing both hourly rates and annual rates. For example, the min salary may be $10, and the max salary may be $30,000. This indicates there may be multiple subtitles within the broader title, where some subtitles are paid hourly, and some are paid annually. Alternately, the data may have errors or may be outdated. It is not allowable to list a salary range in a job posting that is both hourly and annual.
+
+### What are the unique values in the SalaryMinMaxValid Column?
+
+```{r 3}
+byvalidsal<- dfc %>% count(SalaryMinMaxValid, YEAR) %>% ungroup() %>% arrange(desc(n))
+
+kable(head(byvalidsal,10))
+
+```
+
+We see that the majority of these complete cases have a valid salary listed from the Titles dataset. A very small percentage have $0 listed in the min and max possible for the salary as determined by the title designation. Since these employees received a non-zero salary, this indicates an error in the Titles dataset for these 10 observations.
+
+### What are the unique values in the TitleStatus Column?
+
+```{r 4}
+bytitlestatus<- dfc %>% count(TitleStatus, YEAR) %>% ungroup() %>% arrange(desc(n))
+kable(head(bytitlestatus,10))
+```
+
+According to the Titles dataset, some of the employees in the the 2015 payroll have titles that are considered deleted titles. This could be due to the Titles dataset being more current than the Payroll dataset, in which case the employees in the defunct titles will likely have been transfered to equivalent active titles. It could also indicate errors in the datasets.
+
+### What are the unique values in the UnionName Column?
+
+```{r 5}
+byunion<- dfc %>% count(UnionName, YEAR) %>% ungroup() %>% arrange(desc(n))
+kable(head(byunion,10))
+```
+
+The unions with the most representation appear to be the PBA, DC37, Corrections, and Firefighters. "Competitive OJ" indicates "Original Jurisdiction" titles, which receive benefits through the Management Benefits Fund and not a specific union. Recently, some manager titles became unionized; however, this dataset predates that transition.
+
+### Split dataset into Over 10K and under 10K groups
+
+For easier analysis, the dataset is split into salaries under 10K and over 10K. 
+
+```{r 6}
+df10<-subset(dfc, SAL>=10000)
+dfsub10<-subset(dfc, SAL<10000)
+
+#check
+#dim(df10)
+#dim(dfsub10)
+#df10plus has 329105 obs.
+#total dfc is 417006 obs. of  21 variables
+#dfsub10 has 87901 obs.
+#87901+329105 = 417006
+```
+
+---
+
+## Salaries Under 10K, 2014 and 2015
+
+The following section relates to salaries under 10K only.
+
+### Who are the sub-10K employees?
+
+89701 observations of complete cases are below 10K. This includes trades workers such as carpenters, painters, and mechanics, which are full-time, but are listed with an hourly salary instead of annual. This causes these employees to appear as low-wage workers when they may actually earn a mid- or high-range annual salary. For clarity, these have been separated instead of attempting to calculate an equivalent annual rate.
+
+### Which unions have the most sub-10K employees?
+
+```{r 7}
+byunionsub10<- dfsub10 %>% count(UnionName, YEAR) %>% ungroup() %>% arrange(desc(n))
+kable(head(byunionsub10,10))
+```
+
+### Which agencies have the most sub-10K employees?
+
+```{r 8}
+byagencysub10<- dfsub10 %>% count(ADDRESS, YEAR) %>% ungroup() %>% arrange(desc(n))
+kable(head(byagencysub10,10))
+```
+
+### Which titles have the most sub-10K employees?
+
+```{r 9}
+bytitlesub10<- dfsub10 %>% count(Description, YEAR) %>% ungroup() %>% arrange(desc(n))
+kable(head(bytitlesub10,10))
+```
+
+### Agency and Title Distribution under 10K
+
+```{r 10, eval=FALSE}
+# commented out because this combines 2014 and 2015 and is not an accurate representation.
+summarysub10<- dfsub10 %>% count(ADDRESS, Description) %>% ungroup() %>% arrange(desc(n))
+kable(head(summarysub10,10))
+```
+
+### Split the Under-10K group into 2014 and 2015 datasets
+
+For easier analysis, the sub-10K dataset is split into years 2014 and 2015. 
+
+```{r 11}
+df15low<-subset(dfsub10, YEAR==2015)
+df14low<-subset(dfsub10, YEAR==2014)
+```
+
+## Salaries Under 10K in 2015
+
+The following section relates to salaries under 10K only, for 2015 records only.
+
+### Which agencies have the most sub-10K employees in 2015?
+
+```{r low15-1}
+agency15low<- df15low %>% count(ADDRESS) %>% ungroup() %>% arrange(desc(n))
+
+kable(head(agency15low,10))
+```
+
+### Which titles have the most sub-10K employees in 2015?
+
+```{r low15-2}
+title15low<- df15low %>% count(Description, ADDRESS) %>% ungroup() %>% arrange(desc(n))
+
+kable(head(title15low,10))
+```
+
+
+### Which agencies and titles have the most sub-10K employees in 2015?
+
+```{r low15-3}
+summary15low<- df15low %>% count(ADDRESS, Description) %>% ungroup() %>% arrange(desc(n))
+
+kable(head(summary15low,10))
+```
+
+### What is the average salary by title for sub-10K employees in 2015?
+
+```{r low15-4}
+#sal15<- df15 %>% count(ADDRESS, Description) %>% ungroup() %>% arrange(desc(n))
+
+# https://stackoverflow.com/questions/43594841/extra-statistics-with-summarize-at-in-dplyr
+
+#sort by descending salary
+sal15low<-df15low %>%
+  group_by(Description) %>%
+  mutate(Count = n()) %>%
+  group_by(TITLE, Description,  Count) %>%
+  summarise_at(vars(SAL), funs(mean(., na.rm=TRUE)  ))%>%
+  arrange(desc(SAL))
+
+kable(head(sal15low,10))
+kable(tail(sal15low,10))
+
+#sort by descending count
+sal15alow<-df15low %>%
+  group_by(Description) %>%
+  mutate(Count = n()) %>%
+  group_by(TITLE, Description, Count) %>%
+  summarise_at(vars(SAL), funs(round(mean(., na.rm=TRUE),0)  ))%>%
+  arrange(desc(Count))
+
+kable(head(sal15alow,10))
+```
+
+
+---
+
+
+## Salaries Over 10K, 2014 and 2015
+
+The following relates to salaries over 10K only.
+
+### Union Representation over 10K
+
+```{r 12}
+
+byunion10<- df10 %>% count(UnionName, YEAR) %>% ungroup() %>% arrange(desc(n))
+
+kable(head(byunion10,10))
+```
+
+
+### Agency Distribution over 10K
+
+```{r 13}
+byagency10<- df10 %>% count(ADDRESS, YEAR) %>% ungroup() %>% arrange(desc(n))
+
+kable(head(byagency10,10))
+```
+
+
+### Title Distribution over 10K
+
+```{r 14}
+bytitle10<- df10 %>% count(Description, YEAR) %>% ungroup() %>% arrange(desc(n))
+
+kable(head(bytitle10,10))
+```
+
+
+### Agency and Title Distribution over 10K
+
+```{r 15}
+summary10<- df10 %>% count(ADDRESS, Description) %>% ungroup() %>% arrange(desc(n))
+
+kable(head(summary10,10))
+```
+
+### Split the Over-10K group into 2014 and 2015 datasets
+
+```{r 16}
+#total df10 is 329105 obs.
+
+df15<-subset(df10, YEAR==2015)
+dim(df15)
+str(df15)
+#171556 obs
+
+df14<-subset(df10, YEAR==2014)
+dim(df14)
+#157549 obs
+
+#171556+157549 = 329105 obs
+```
+
+```{r 16e, eval=FALSE}
+#change to eval=TRUE to test if correct data has been selected
+write.csv(df15, file = "df15.csv")
+write.csv(df14, file = "df14.csv")
+```
+
+
+## Salaries Over 10K in 2015
+
+The following relates to salaries over 10K only, for 2015 records only.
+
+### Which agencies have the most 10K+ employees in 2015?
+
+```{r 17}
+agency15<- df15 %>% count(ADDRESS) %>% ungroup() %>% arrange(desc(n))
+
+kable(head(agency15,10))
+```
+
+
+### Which titles have the most 10K+ employees in 2015?
+
+```{r 18}
+title15<- df15 %>% count(Description, ADDRESS) %>% ungroup() %>% arrange(desc(n))
+
+kable(head(title15,10))
+```
+
+
+### Which agencies and titles have the most 10K+ employees in 2015?
+
+
+```{r 19}
+summary15<- df15 %>% count(ADDRESS, Description) %>% ungroup() %>% arrange(desc(n))
+
+kable(head(summary15,10))
+```
+
+### What is the average salary by title for 10K+ employees in 2015?
+
+```{r 20}
+#sal15<- df15 %>% count(ADDRESS, Description) %>% ungroup() %>% arrange(desc(n))
+
+# https://stackoverflow.com/questions/43594841/extra-statistics-with-summarize-at-in-dplyr
+
+#sort by descending salary
+sal15<-df15 %>%
+  group_by(Description) %>%
+  mutate(Count = n()) %>%
+  group_by(TITLE, Description,  Count) %>%
+  summarise_at(vars(SAL), funs(mean(., na.rm=TRUE)  ))%>%
+  arrange(desc(SAL))
+
+kable(head(sal15,10))
+kable(tail(sal15,10))
+
+#sort by descending count
+sal15a<-df15 %>%
+  group_by(Description) %>%
+  mutate(Count = n()) %>%
+  group_by(TITLE, Description, Count) %>%
+  summarise_at(vars(SAL), funs(round(mean(., na.rm=TRUE),0)  ))%>%
+  arrange(desc(Count))
+
+kable(head(sal15a,10))
+```
+
+# Is there a relationship between count of jobs in a certain title and salary?
+
+
+# Plot: Top  agencies with the most jobs under $10,000
+
+```{r 9c0-import}
+agencylist1<- data.frame(read.csv("agency15low.csv"),stringsAsFactors = FALSE)
+
+agencylist1 %>% mutate_if(is.factor, as.character) -> agencylist1
+```
+
+
+```{r 9c, eval=FALSE}
+# Add addition columns, needed for drawing with geom_rect.
+agencylist1$fraction = agencylist1$n / sum(agencylist1$n)
+agencylist1 = agencylist1[order(agencylist1$fraction), ]
+agencylist1$ymax = cumsum(agencylist1$fraction)
+agencylist1$ymin = c(0, head(agencylist1$ymax, n=-1))
+```
+
+```{r 9c1, eval=FALSE}
+# Make the plot
+p1 = ggplot(agencylist1, aes(fill=ADDRESS, ymax=ymax, ymin=ymin, xmax=4, xmin=3, label=ADDRESS)) +
+  
+geom_rect() +
+coord_polar(theta="y") +
+xlim(c(0, 4)) +
+scale_fill_manual(values=rep(brewer.pal(5,"RdPu"),times=4))+
+theme(panel.background = element_rect(fill = 'white'))+ 
+theme(panel.grid=element_blank()) +
+theme(axis.text=element_blank()) +
+theme(axis.ticks=element_blank()) +
+#geom_text(x=2, y=1, check_overlap=TRUE)+
+ggtitle("Agencies with the most jobs under $10,000")
+
+p1
+```
+
+
+# Plot: Top  titles with the most jobs under $10,000
+
+```{r 10c2, eval=FALSE}
+#y.breaks <- cumsum(df$n) - df$n/2
+#y.breaks
+
+p1 = ggplot(df, aes(fill=Description, ymax=(), ymin=(), xmax=(), xmin=() )) +
+     geom_rect() +
+     coord_polar(theta="y") +
+     xlim(c(0, 4)) +
+    scale_fill_manual(values=rep(brewer.pal(5,"Blues"),times=4))+
+     theme(panel.grid=element_blank()) +
+     theme(axis.ticks=element_blank()) +
+    ggtitle("Titles with the most jobs under $10,000")+
+    theme(axis.text.x=element_text(color='black')) 
+    #+scale_y_continuous(
+        #breaks=y.breaks,   # where to place the labels
+        #labels=df$Description # the labels
+    #)
+p1
+ 
+```
+
+
+
+```{r 10c, eval=FALSE}
+#sub10K salaries for year 2015 only
+df<-subset(bytitlesub10, YEAR==2015)
+
+df<-head(bytitlesub10,10)
+
+
+# Add addition columns, needed for drawing with geom_rect.
+df$fraction = df$n / sum(df$n)
+df = df[order(df$fraction), ]
+df$ymax = cumsum(df$fraction)
+df$ymin = c(0, head(df$ymax, n=-1))
+ 
+```
+
+
+```{r 10c3, eval=FALSE}
+ggpie <- function (dat, by, totals) {
+    ggplot(dat, aes_string(x=factor(1), y=totals, fill=by)) +
+        geom_bar(stat='identity', color='black') +
+        guides(fill=guide_legend(override.aes=list(colour=NA))) + # removes black borders from legend
+        coord_polar(theta='y') +
+        theme(axis.ticks=element_blank(),
+            axis.text.y=element_blank(),
+            axis.text.x=element_text(colour='black'),
+            axis.title=element_blank()) +
+    scale_y_continuous(breaks=cumsum(dat[[totals]]) - dat[[totals]] / 2, labels=dat[[by]])    
+}
+
+ggpie(df, by='Description', totals='n') +
+    ggtitle("Titles with the most jobs under $10,000") +
+    theme(axis.ticks.margin=unit(0,"lines"),
+          plot.margin=rep(unit(0, "lines"),4))
+```
+
+
+
+# Issues with data integrity
+<p>
+Describe creation of indicator columns: CountSubTitles, Min.MinRate, Max.MaxRate, SalaryMinMaxVlaid, MultipleSubtitles, PayType, PayPeriod
+<p>
+Typo in at least one record, showing $350,000 salary minimum which should be $35,000
+<p>
+Salary rate is not always within the min/max allowable of the title. This may be because the salary may include overtime, or the title list may have outdated salary amounts.
+<p>
+153485 rows of 570491 are unmatched, meaning there are 153485 employee records where the title code does not correspond to a published title in the civil list. These rows will have to be removed from the dataset because no title analysis will be possible.
+<p>
+35 vs. 40 hours - some titles are listed as more than one number of hours. This is likely an error in the data.
+<p>
